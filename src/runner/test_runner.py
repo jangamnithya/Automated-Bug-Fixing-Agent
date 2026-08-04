@@ -7,11 +7,28 @@ STILL ASSUMES you've added `frame_status: FrameStatus | None = None` to
 your FailedTest model. If not, tell me and parser.parse() switches to
 returning (FailedTest, FrameStatus) as a tuple instead.
 
-FIX APPLIED: the pasted version had `block_map = {...}` indented one
-level deeper than the rest of _build_scoped_failed_tests -- an
-IndentationError, confirmed by compiling the isolated fragment before
-writing this file. Corrected below; nothing else changed from the prior
-version.
+REVIEW FIXES APPLIED (Staff Engineer pass):
+  1. After self.parser.parse(), verify failed_test.error is non-empty.
+     `error` is required/non-optional on FailedTest, but this file does
+     not own StackTraceParser's contract and can't fully verify from
+     here that it's upheld on every path -- so don't trust it silently.
+     If empty, synthesize a fallback message and log a warning.
+  2. After building failed_test_names, compare its length against the
+     `failed` count parsed from the pytest summary line. If they don't
+     match, log a warning -- this means a real failure had no banner
+     match and would otherwise silently vanish from BugReport while
+     `failed` still reports the higher, correct count.
+
+INDENTATION FIX (this pass): the subprocess.run(...) call had its
+argument list, cwd=, capture_output=, and closing paren at 4 spaces
+instead of 8 -- inconsistent with the rest of the method body.
+Corrected; behavior of the call itself is unchanged from what you sent.
+
+FLAGGED, not changed: this version passes cwd=project_path but no
+longer includes project_path in the pytest argv list itself (previous
+version did: [sys.executable, "-m", "pytest", "-v", project_path]).
+Confirm this is intentional -- pytest will now discover tests starting
+from cwd rather than being told the target path explicitly.
 """
 
 import logging
@@ -46,6 +63,8 @@ def _split_into_test_blocks(output: str) -> List[Tuple[str, str]]:
 
 
 class TestRunner:
+    __test__ = False
+
     def __init__(self):
         self.parser = StackTraceParser(
             project_source_dirs=["src/"],   # [ASSUMPTION] still unverified
@@ -53,14 +72,13 @@ class TestRunner:
         )
 
     def run_tests(self, project_path: str) -> BugReport:
+        # sys.executable -m pytest (not bare "pytest") avoids depending on
+        # pytest being on PATH as a standalone executable -- confirmed
+        # necessary: bare "pytest" produced FileNotFoundError [WinError 2]
+        # even though `python -m pytest` worked fine in the same terminal.
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-v", project_path],
-            # Using `sys.executable -m pytest` instead of a bare "pytest"
-            # avoids depending on pytest being on PATH as a standalone
-            # executable -- confirmed necessary: bare "pytest" produced
-            # FileNotFoundError [WinError 2] even though `python -m pytest`
-            # worked fine in the same terminal. -v is still an assumption
-            # about your original invocation, not yet independently verified.
+            [sys.executable, "-m", "pytest", "-v"],
+            cwd=project_path,
             capture_output=True,
             text=True,
         )
@@ -88,6 +106,16 @@ class TestRunner:
             )
 
         failed_test_names = [name for name, _ in _split_into_test_blocks(output)]
+
+        if len(failed_test_names) != failed:
+            logger.warning(
+                "Found %d failure banner(s) in output but pytest summary "
+                "reports %d failed -- some failures may be missing a "
+                "standard banner (e.g. collection errors, --tb=line/no) "
+                "and will be silently absent from failed_tests.",
+                len(failed_test_names), failed,
+            )
+
         failed_tests = self._build_scoped_failed_tests(output, failed_test_names)
 
         return BugReport(
@@ -128,11 +156,18 @@ class TestRunner:
             )
             failed_test = self.parser.parse(failed_test)
 
+            if not failed_test.error:
+                fallback = (
+                    f"StackTraceParser returned no error message for "
+                    f"'{name}' (frame_status="
+                    f"{getattr(failed_test, 'frame_status', 'unknown')})."
+                )
+                logger.warning(fallback)
+                failed_test.error = fallback
+
             if getattr(failed_test, "frame_status", None) == FrameStatus.PARSE_FAILED:
                 logger.warning(
-                    "StackTraceParser could not parse traceback for '%s' -- "
-                    "'error' remains '' rather than a real message. Check "
-                    "frame_status if present, don't rely on error=='' alone.",
+                    "StackTraceParser could not parse traceback for '%s'.",
                     name,
                 )
 
