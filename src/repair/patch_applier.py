@@ -3,7 +3,6 @@ import shutil
 
 
 class PatchApplier:
-    """Apply a generated patch and provide rollback support."""
 
     def apply(self, patch):
         file_path = Path(patch["file_path"])
@@ -14,6 +13,17 @@ class PatchApplier:
             )
 
         line_number = patch["line_number"]
+        original = patch["original"]
+        replacement = patch["replacement"]
+
+        # ---------------------------------------------
+        # Create backup
+        # ---------------------------------------------
+        backup_path = file_path.with_suffix(
+            file_path.suffix + ".bak"
+        )
+
+        shutil.copy2(file_path, backup_path)
 
         lines = file_path.read_text(
             encoding="utf-8"
@@ -24,48 +34,74 @@ class PatchApplier:
                 f"Invalid line number: {line_number}"
             )
 
-        original_line = lines[line_number - 1]
-
-        if original_line != patch["original"]:
+        # Verify the expected original line
+        if lines[line_number - 1].strip() != original.strip():
             raise ValueError(
-                "Source line does not match the expected "
-                "original line."
+                "Original source line does not match patch."
             )
 
-        backup_path = file_path.with_suffix(
-            file_path.suffix + ".bak"
+        # ---------------------------------------------
+        # Apply replacement
+        # ---------------------------------------------
+        indentation = len(lines[line_number - 1]) - len(
+            lines[line_number - 1].lstrip()
         )
 
-        shutil.copy2(file_path, backup_path)
+        base_indent = " " * indentation
 
-        replacement_lines = patch["replacement"].splitlines()
+        replacement_lines = replacement.splitlines()
 
-        lines[
-            line_number - 1:
-            line_number
-        ] = replacement_lines
+        formatted_lines = []
+
+        for index, replacement_line in enumerate(
+            replacement_lines
+        ):
+            if index == 0:
+                formatted_lines.append(
+                    base_indent + replacement_line
+                )
+            else:
+                # Preserve the indentation supplied
+                # by the generated replacement.
+                formatted_lines.append(
+                    base_indent + replacement_line
+                )
+
+        new_lines = (
+            lines[: line_number - 1]
+            + formatted_lines
+            + lines[line_number:]
+        )
 
         file_path.write_text(
-            "\n".join(lines) + "\n",
+            "\n".join(new_lines) + "\n",
             encoding="utf-8",
         )
 
         return {
+            "applied": True,
             "file_path": str(file_path),
             "backup_path": str(backup_path),
-            "applied": True,
+            "line_number": line_number,
         }
 
     def rollback(self, result):
-        file_path = Path(result["file_path"])
         backup_path = Path(result["backup_path"])
+        file_path = Path(result["file_path"])
 
         if not backup_path.exists():
             raise FileNotFoundError(
                 f"Backup file not found: {backup_path}"
             )
 
-        shutil.copy2(backup_path, file_path)
+        shutil.copy2(
+            backup_path,
+            file_path,
+        )
+
         backup_path.unlink()
 
-        return True
+        return {
+            "rolled_back": True,
+            "file_path": str(file_path),
+        }

@@ -7,6 +7,9 @@ from src.localizer.bug_localizer import BugLocalizer
 from src.analyzer.code_context import CodeContextExtractor
 from src.analyzer.fault_analyzer import FaultAnalyzer
 from src.repair.repair_generator import RepairGenerator
+from src.repair.patch_generator import PatchGenerator
+from src.repair.patch_applier import PatchApplier
+from src.repair.repair_validator import RepairValidator
 
 
 def main():
@@ -33,10 +36,11 @@ def main():
     print(f"Failed      : {report.failed}")
 
     # ---------------------------------------------------------
-    # 3. Show failed test details
+    # 3. Check failed tests
     # ---------------------------------------------------------
     if not report.failed_tests:
         print("\nNo failed tests found.")
+        print("===== NO BUGS DETECTED =====")
         return
 
     print("\nFailed Test Details:")
@@ -118,13 +122,16 @@ def main():
         print("------------------------------")
 
         # -----------------------------------------------------
-        # 7. Code context extraction
+        # 7. Select top candidate
         # -----------------------------------------------------
         top_candidate = ranked_candidates[0]
 
         file_path = top_candidate["file_path"]
         line_number = failed_test.line_number
 
+        # -----------------------------------------------------
+        # 8. Code context extraction
+        # -----------------------------------------------------
         print("\n===== Code Context =====")
 
         if line_number is None:
@@ -142,8 +149,16 @@ def main():
             context_lines=3,
         )
 
-        print(f"File Path      : {context_result['file_path']}")
-        print(f"Target Line    : {context_result['target_line']}")
+        print(
+            f"File Path      : "
+            f"{context_result['file_path']}"
+        )
+
+        print(
+            f"Target Line    : "
+            f"{context_result['target_line']}"
+        )
+
         print("Source Context :")
 
         for line in context_result["context"]:
@@ -156,7 +171,7 @@ def main():
             )
 
         # -----------------------------------------------------
-        # 8. Fault analysis
+        # 9. Fault analysis
         # -----------------------------------------------------
         exception_type = failed_test.exception_type
 
@@ -177,10 +192,25 @@ def main():
         )
 
         print("\n===== Fault Analysis =====")
-        print(f"File Path      : {analysis['file_path']}")
-        print(f"Line Number    : {analysis['line_number']}")
-        print(f"Exception Type : {analysis['exception_type']}")
-        print(f"Issue          : {analysis['issue']}")
+        print(
+            f"File Path      : "
+            f"{analysis['file_path']}"
+        )
+
+        print(
+            f"Line Number    : "
+            f"{analysis['line_number']}"
+        )
+
+        print(
+            f"Exception Type : "
+            f"{analysis['exception_type']}"
+        )
+
+        print(
+            f"Issue          : "
+            f"{analysis['issue']}"
+        )
 
         print("Evidence       :")
 
@@ -188,23 +218,155 @@ def main():
             print(f"  - {evidence}")
 
         # -----------------------------------------------------
-        # 9. Repair suggestion
+        # 10. Repair suggestion
         # -----------------------------------------------------
         generator = RepairGenerator()
 
         suggestion = generator.generate(analysis)
 
         print("\n===== Repair Suggestion =====")
-        print(f"File Path      : {suggestion.file_path}")
-        print(f"Line Number    : {suggestion.line_number}")
-        print(f"Problem        : {suggestion.problem}")
-        print(f"Suggested Fix  : {suggestion.suggested_fix}")
-        print(f"Confidence     : {suggestion.confidence}")
+
+        print(
+            f"File Path      : "
+            f"{suggestion.file_path}"
+        )
+
+        print(
+            f"Line Number    : "
+            f"{suggestion.line_number}"
+        )
+
+        print(
+            f"Problem        : "
+            f"{suggestion.problem}"
+        )
+
+        print(
+            f"Suggested Fix  : "
+            f"{suggestion.suggested_fix}"
+        )
+
+        print(
+            f"Confidence     : "
+            f"{suggestion.confidence}"
+        )
 
         print("Reasoning      :")
 
         for reason in suggestion.reasoning:
             print(f"  - {reason}")
+
+        # -----------------------------------------------------
+        # 11. Generate patch
+        # -----------------------------------------------------
+        print("\n===== Generated Patch =====")
+
+        patch_generator = PatchGenerator()
+
+        try:
+            patch = patch_generator.generate(suggestion)
+        except Exception as error:
+            print(
+                f"Patch generation failed: {error}"
+            )
+            continue
+
+        print(
+            f"File Path      : "
+            f"{patch['file_path']}"
+        )
+
+        print(
+            f"Line Number    : "
+            f"{patch['line_number']}"
+        )
+
+        print("Original       :")
+        print(patch["original"])
+
+        print("Replacement    :")
+        print(patch["replacement"])
+
+        # -----------------------------------------------------
+        # 12. Apply patch
+        # -----------------------------------------------------
+        print("\n===== Applying Patch =====")
+
+        patch_applier = PatchApplier()
+
+        try:
+            apply_result = patch_applier.apply(patch)
+
+            print(
+                "Patch applied successfully."
+            )
+
+        except Exception as error:
+            print(
+                f"Patch application failed: {error}"
+            )
+            continue
+
+        # -----------------------------------------------------
+        # 13. Validate repair
+        # -----------------------------------------------------
+        print("\n===== Validating Repair =====")
+
+        validator = RepairValidator()
+
+        try:
+            valid = validator.validate(
+                str(project_path)
+            )
+
+        except Exception as error:
+            print(
+                f"Validation error: {error}"
+            )
+            valid = False
+
+        # -----------------------------------------------------
+        # 14. Repair successful
+        # -----------------------------------------------------
+        if valid:
+            print(
+                "Repair validated successfully."
+            )
+
+            print(
+                "===== REPAIR SUCCESSFUL ====="
+            )
+
+        # -----------------------------------------------------
+        # 15. Repair failed -> rollback
+        # -----------------------------------------------------
+        else:
+            print(
+                "Tests still fail after "
+                "applying the patch."
+            )
+
+            print(
+                "===== REPAIR FAILED ====="
+            )
+
+            print(
+                "Rolling back patch..."
+            )
+
+            try:
+                patch_applier.rollback(
+                    apply_result
+                )
+
+                print(
+                    "Rollback successful."
+                )
+
+            except Exception as error:
+                print(
+                    f"Rollback failed: {error}"
+                )
 
 
 if __name__ == "__main__":

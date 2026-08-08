@@ -1,28 +1,45 @@
-import subprocess
 from pathlib import Path
+import subprocess
+import sys
 
 
 class RepairValidator:
-    """Run project tests and determine whether a repair is valid."""
 
     def validate(self, project_path):
         project_path = Path(project_path)
 
         if not project_path.exists():
-            raise FileNotFoundError(
-                f"Project path not found: {project_path}"
+            return {
+                "passed": False,
+                "return_code": None,
+                "stdout": "",
+                "stderr": f"Project not found: {project_path}",
+            }
+
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                ],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
             )
 
-        result = subprocess.run(
-            ["pytest", "-q"],
-            cwd=str(project_path),
-            capture_output=True,
-            text=True,
-        )
+            return {
+                "passed": result.returncode == 0,
+                "return_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
 
-        return {
-            "passed": result.returncode == 0,
-            "return_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
+        except Exception as exc:
+            return {
+                "passed": False,
+                "return_code": None,
+                "stdout": "",
+                "stderr": str(exc),
+            }
