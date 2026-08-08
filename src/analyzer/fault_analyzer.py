@@ -31,6 +31,9 @@ class FaultAnalyzer:
         evidence = []
         issue = "Unable to determine a specific issue."
 
+        # -----------------------------------------------------
+        # Division / arithmetic operation
+        # -----------------------------------------------------
         if isinstance(target_node, ast.Return):
             operation = target_node.value
 
@@ -39,13 +42,65 @@ class FaultAnalyzer:
 
                 if operator == "Div":
                     issue = "Division operation may be causing the failure."
+
                     evidence.append(
                         "The suspicious line contains a division operation."
                     )
 
+                elif operator in {
+                    "Add",
+                    "Sub",
+                    "Mult",
+                    "Mod",
+                    "Pow",
+                }:
+                    issue = (
+                        f"The suspicious line contains a "
+                        f"{operator} arithmetic operation."
+                    )
+
+                    evidence.append(
+                        f"The suspicious line contains a "
+                        f"{operator} operation."
+                    )
+
+        # -----------------------------------------------------
+        # Comparison operation
+        # -----------------------------------------------------
+        if isinstance(target_node, ast.Return):
+            operation = target_node.value
+
+            if isinstance(operation, ast.Compare):
+                issue = (
+                    "Comparison operation may be causing "
+                    "the failure."
+                )
+
+                evidence.append(
+                    "The suspicious line contains a comparison operation."
+                )
+
+                operators = [
+                    type(operator).__name__
+                    for operator in operation.ops
+                ]
+
+                evidence.append(
+                    "Comparison operator(s): "
+                    + ", ".join(operators)
+                )
+
+        # -----------------------------------------------------
+        # Exception-specific evidence
+        # -----------------------------------------------------
         if exception_type == "ZeroDivisionError":
             evidence.append(
                 "The exception indicates division by zero."
+            )
+
+        elif exception_type == "AssertionError":
+            evidence.append(
+                "The exception indicates that an assertion condition failed."
             )
 
         return {
