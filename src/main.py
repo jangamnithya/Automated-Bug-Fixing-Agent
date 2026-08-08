@@ -6,6 +6,7 @@ from src.localizer.candidate import CandidateFinder
 from src.localizer.bug_localizer import BugLocalizer
 from src.analyzer.code_context import CodeContextExtractor
 from src.analyzer.fault_analyzer import FaultAnalyzer
+from src.repair.repair_generator import RepairGenerator
 
 
 def main():
@@ -141,14 +142,8 @@ def main():
             context_lines=3,
         )
 
-        print(
-            f"File Path      : "
-            f"{context_result['file_path']}"
-        )
-        print(
-            f"Target Line    : "
-            f"{context_result['target_line']}"
-        )
+        print(f"File Path      : {context_result['file_path']}")
+        print(f"Target Line    : {context_result['target_line']}")
         print("Source Context :")
 
         for line in context_result["context"]:
@@ -182,27 +177,34 @@ def main():
         )
 
         print("\n===== Fault Analysis =====")
-        print(
-            f"File Path      : "
-            f"{analysis['file_path']}"
-        )
-        print(
-            f"Line Number    : "
-            f"{analysis['line_number']}"
-        )
-        print(
-            f"Exception Type : "
-            f"{analysis['exception_type']}"
-        )
-        print(
-            f"Issue          : "
-            f"{analysis['issue']}"
-        )
+        print(f"File Path      : {analysis['file_path']}")
+        print(f"Line Number    : {analysis['line_number']}")
+        print(f"Exception Type : {analysis['exception_type']}")
+        print(f"Issue          : {analysis['issue']}")
 
         print("Evidence       :")
 
         for evidence in analysis["evidence"]:
             print(f"  - {evidence}")
+
+        # -----------------------------------------------------
+        # 9. Repair suggestion
+        # -----------------------------------------------------
+        generator = RepairGenerator()
+
+        suggestion = generator.generate(analysis)
+
+        print("\n===== Repair Suggestion =====")
+        print(f"File Path      : {suggestion.file_path}")
+        print(f"Line Number    : {suggestion.line_number}")
+        print(f"Problem        : {suggestion.problem}")
+        print(f"Suggested Fix  : {suggestion.suggested_fix}")
+        print(f"Confidence     : {suggestion.confidence}")
+
+        print("Reasoning      :")
+
+        for reason in suggestion.reasoning:
+            print(f"  - {reason}")
 
 
 if __name__ == "__main__":
