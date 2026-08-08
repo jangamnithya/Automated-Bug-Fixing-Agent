@@ -1,5 +1,5 @@
-from calculator import add
+from calculator import validate_and_add
 
 
 def test_add():
-    assert add(2, 3) == 5
+    validate_and_add(10, 0)

@@ -1,54 +1,38 @@
-import re
-
-from src.models.bug_report import FailedTest
-
-
-class StackTraceParser:
-
-    def parse(self, failed_test: FailedTest) -> FailedTest:
-
-        traceback = failed_test.traceback
+import ast
+from pathlib import Path
 
 
-        # File path + line number
-        file_match = re.search(
-            r"([\w\\\/.\-_]+\.py):(\d+)",
-            traceback
-        )
+class PythonParser:
 
-        if file_match:
-            failed_test.file_path = file_match.group(1)
-            failed_test.line_number = int(file_match.group(2))
+    def parse_file(self, file_path):
+        file_path = Path(file_path)
 
+        source_code = file_path.read_text(encoding="utf-8")
 
-        # Function name
-        function_match = re.search(
-            r"def\s+(\w+)",
-            traceback
-        )
+        tree = ast.parse(source_code)
 
-        if function_match:
-            failed_test.function_name = function_match.group(1)
+        functions = []
+        classes = []
+        methods = []
 
+        for node in ast.walk(tree):
 
-        # Exception type
-        exception_match = re.search(
-            r"(\w+(?:Error|Exception))",
-            traceback
-        )
+            if isinstance(node, ast.FunctionDef):
+                functions.append(node.name)
 
-        if exception_match:
-            failed_test.exception_type = exception_match.group(1)
+            elif isinstance(node, ast.AsyncFunctionDef):
+                functions.append(node.name)
 
+            elif isinstance(node, ast.ClassDef):
+                classes.append(node.name)
 
-        # Error message
-        error_match = re.search(
-            r"E\s+(.+)",
-            traceback
-        )
+                for child in node.body:
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        methods.append(child.name)
 
-        if error_match:
-            failed_test.error = error_match.group(1).strip()
-
-
-        return failed_test
+        return {
+            "file_path": str(file_path),
+            "functions": functions,
+            "classes": classes,
+            "methods": methods
+        }

@@ -3,32 +3,22 @@ Same interfaces as before:
   - main.py: TestRunner() no-arg constructor, run_tests(project_path).
   - FailedTest(BaseModel): `name`, `error: str` (required, non-optional).
 
-STILL ASSUMES you've added `frame_status: FrameStatus | None = None` to
-your FailedTest model. If not, tell me and parser.parse() switches to
-returning (FailedTest, FrameStatus) as a tuple instead.
-
-REVIEW FIXES APPLIED (Staff Engineer pass):
+REVIEW FIXES APPLIED (Staff Engineer pass, prior):
   1. After self.parser.parse(), verify failed_test.error is non-empty.
-     `error` is required/non-optional on FailedTest, but this file does
-     not own StackTraceParser's contract and can't fully verify from
-     here that it's upheld on every path -- so don't trust it silently.
-     If empty, synthesize a fallback message and log a warning.
+     Synthesize a fallback message and log a warning if empty.
   2. After building failed_test_names, compare its length against the
-     `failed` count parsed from the pytest summary line. If they don't
-     match, log a warning -- this means a real failure had no banner
-     match and would otherwise silently vanish from BugReport while
-     `failed` still reports the higher, correct count.
+     `failed` count parsed from the pytest summary line; log a warning
+     on mismatch.
 
-INDENTATION FIX (this pass): the subprocess.run(...) call had its
-argument list, cwd=, capture_output=, and closing paren at 4 spaces
-instead of 8 -- inconsistent with the rest of the method body.
-Corrected; behavior of the call itself is unchanged from what you sent.
-
-FLAGGED, not changed: this version passes cwd=project_path but no
-longer includes project_path in the pytest argv list itself (previous
-version did: [sys.executable, "-m", "pytest", "-v", project_path]).
-Confirm this is intentional -- pytest will now discover tests starting
-from cwd rather than being told the target path explicitly.
+REVIEW FIX APPLIED (this pass): __init__ previously hardcoded
+project_source_dirs=["src/"], test_dirs=["tests/"] with no way for a
+caller to override them. Confirmed via traced contradiction: a project
+with no src/ layout (e.g. sample_project/calculator.py at the project
+root) could never produce APPLICATION_FRAME_FOUND, since no frame path
+would ever start with "src/". Added optional constructor arguments,
+defaulting to the prior hardcoded values so TestRunner() alone remains
+valid -- callers targeting a different layout (like main.py, for
+sample_project/) now pass the correct dirs explicitly.
 """
 
 import logging
@@ -65,10 +55,14 @@ def _split_into_test_blocks(output: str) -> List[Tuple[str, str]]:
 class TestRunner:
     __test__ = False
 
-    def __init__(self):
+    def __init__(
+        self,
+        project_source_dirs: Optional[List[str]] = None,
+        test_dirs: Optional[List[str]] = None,
+    ):
         self.parser = StackTraceParser(
-            project_source_dirs=["src/"],   # [ASSUMPTION] still unverified
-            test_dirs=["tests/"],           # [ASSUMPTION] still unverified
+            project_source_dirs=project_source_dirs or ["src/"],
+            test_dirs=test_dirs or ["tests/"],
         )
 
     def run_tests(self, project_path: str) -> BugReport:
